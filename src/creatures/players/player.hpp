@@ -1040,6 +1040,8 @@ public:
 	bool isImmuneCleanse(ConditionType_t conditiontype) const;
 	void setImmuneFear();
 	bool isImmuneFear() const;
+	void setImmuneRoot();
+	bool isImmuneRoot() const;
 	uint16_t parseRacebyCharm(charmRune_t charmId, bool set, uint16_t newRaceid);
 
 	uint64_t getItemCustomPrice(uint16_t itemId, bool buyPrice = false) const;
@@ -1280,6 +1282,32 @@ public:
 	bool canSpeakWithHireling(uint8_t speechbubble);
 
 	uint16_t getPlayerVocationEnum() const;
+
+	/*******************************************************************************
+	 * Deflect Condition
+	 * Responsible for defining the conditions that when trying to be
+	 * added to the player or being updated, there is a chance to prevent these actions
+	 ******************************************************************************/
+	struct DeflectCondition {
+		DeflectCondition(std::string source, ConditionType_t condition, uint8_t chance) :
+			source(source), condition(condition), chance(chance) { }
+		std::string source;
+		uint8_t chance = 0;
+		ConditionType_t condition = CONDITION_NONE;
+	};
+
+	const std::vector<DeflectCondition> &getDeflectConditions() const {
+		return deflectConditions;
+	}
+
+	// Searches according to a conditionType the higest chance found among the player's
+	// deflect conditions. Return defaults to 0 if no condition is met.
+	uint8_t getDeflectConditionChance(const ConditionType_t &conditionType) const;
+
+	// Removes a deflect condition from a player from a given source
+	void removeDeflectCondition(const std::string_view &source, const ConditionType_t &conditionType, const uint8_t &chance);
+
+	void addDeflectCondition(std::string source, ConditionType_t conditionType, uint8_t chance);
 
 private:
 	friend class PlayerLock;
@@ -1532,6 +1560,7 @@ private:
 	std::pair<ConditionType_t, uint64_t> cleanseCondition = { CONDITION_NONE, 0 };
 
 	std::pair<ConditionType_t, uint64_t> m_fearCondition = { CONDITION_NONE, 0 };
+	std::pair<ConditionType_t, uint64_t> m_rootCondition = { CONDITION_NONE, 0 };
 
 	uint8_t soul = 0;
 	uint8_t levelPercent = 0;
@@ -1672,4 +1701,11 @@ private:
 	int32_t getMarriageSpouse() const {
 		return marriageSpouse;
 	}
+
+	// Stores of conditions to be deflected from various sources, including from "imbuements".
+	// Different DeflectCondition containing the same data may be present.
+	// This is allowed because, for example, if armor and boots have a common imbument,
+	// unequipping the armor does not influence the boot's imbuement.
+	// When present simultaneously, the one with the greatest chance of occurrence will prevail.
+	std::vector<DeflectCondition> deflectConditions;
 };
