@@ -24,7 +24,9 @@
 #include "items/cylinder.hpp"
 #include "game/movement/position.hpp"
 #include "creatures/creatures_definitions.hpp"
+#include "creatures/players/animus_mastery/animus_mastery.hpp"
 
+class AnimusMastery;
 class House;
 class NetworkMessage;
 class Weapon;
@@ -72,17 +74,23 @@ struct HighscoreCharacter;
 
 enum class PlayerIcon : uint8_t;
 enum class IconBakragore : uint8_t;
+enum class HouseAuctionType : uint8_t;
+enum class BidErrorMessage : uint8_t;
+enum class TransferErrorMessage : uint8_t;
+enum class AcceptTransferErrorMessage : uint8_t;
 enum ObjectCategory_t : uint8_t;
 enum PreySlot_t : uint8_t;
 enum SpeakClasses : uint8_t;
 enum ChannelEvent_t : uint8_t;
 enum SquareColor_t : uint8_t;
+enum Resource_t : uint8_t;
 
 using GuildWarVector = std::vector<uint32_t>;
 using StashContainerList = std::vector<std::pair<std::shared_ptr<Item>, uint32_t>>;
 using ItemVector = std::vector<std::shared_ptr<Item>>;
 using UsersMap = std::map<uint32_t, std::shared_ptr<Player>>;
 using InvitedMap = std::map<uint32_t, std::shared_ptr<Player>>;
+using HouseMap = std::map<uint32_t, std::shared_ptr<House>>;
 
 struct ForgeHistory {
 	ForgeAction_t actionType = ForgeAction_t::FUSION;
@@ -465,6 +473,9 @@ public:
 	uint8_t getSoul() const {
 		return soul;
 	}
+	uint8_t getFullSoul() const {
+		return getSoul() + getVarStats(STAT_SOULPOINTS);
+	}
 	bool isAccessPlayer() const;
 	bool isPlayerGroup() const;
 	bool isPremium() const;
@@ -557,6 +568,9 @@ public:
 
 	void setVarStats(stats_t stat, int32_t modifier);
 	int32_t getDefaultStats(stats_t stat) const;
+	int32_t getVarStats(stats_t stat) const {
+		return varStats[stat];
+	}
 
 	void addConditionSuppressions(const std::array<ConditionType_t, ConditionType_t::CONDITION_COUNT> &addCondition);
 	void removeConditionSuppressions();
@@ -681,6 +695,7 @@ public:
 	void drainMana(const std::shared_ptr<Creature> &attacker, int32_t manaLoss) override;
 	void addManaSpent(uint64_t amount);
 	void addSkillAdvance(skills_t skill, uint64_t count);
+	int32_t getSkill(skills_t skilltype, SkillsId_t skillinfo) const;
 
 	int32_t getArmor() const override;
 	int32_t getDefense() const override;
@@ -729,11 +744,16 @@ public:
 	void sendCreatureSkull(const std::shared_ptr<Creature> &creature) const;
 	void checkSkullTicks(int64_t ticks);
 
-	bool canWear(uint16_t lookType, uint8_t addons) const;
+	bool canWearOutfit(uint16_t lookType, uint8_t addons) const;
 	void addOutfit(uint16_t lookType, uint8_t addons);
 	bool removeOutfit(uint16_t lookType);
 	bool removeOutfitAddon(uint16_t lookType, uint8_t addons);
 	bool getOutfitAddons(const std::shared_ptr<Outfit> &outfit, uint8_t &addons) const;
+
+	bool changeOutfit(Outfit_t outfit, bool checkList);
+	void hasRequestedOutfit(bool v) {
+		requestedOutfit = v;
+	}
 
 	bool canFamiliar(uint16_t lookType) const;
 	void addFamiliar(uint16_t lookType);
@@ -894,6 +914,15 @@ public:
 	void sendOpenPrivateChannel(const std::string &receiver) const;
 	void sendExperienceTracker(int64_t rawExp, int64_t finalExp) const;
 	void sendOutfitWindow() const;
+
+	// House Auction
+	BidErrorMessage canBidHouse(uint32_t houseId);
+	TransferErrorMessage canTransferHouse(uint32_t houseId, uint32_t newOwnerGUID);
+	AcceptTransferErrorMessage canAcceptTransferHouse(uint32_t houseId);
+	void sendCyclopediaHouseList(const HouseMap &houses) const;
+	void sendResourceBalance(Resource_t resourceType, uint64_t value) const;
+	void sendHouseAuctionMessage(uint32_t houseId, HouseAuctionType type, uint8_t index, bool bidSuccess = false) const;
+
 	// Imbuements
 	void onApplyImbuement(const Imbuement* imbuement, const std::shared_ptr<Item> &item, uint8_t slot, bool protectionCharm);
 	void onClearImbuement(const std::shared_ptr<Item> &item, uint8_t slot);
@@ -1215,6 +1244,7 @@ public:
 	bool checkChainSystem() const;
 	bool checkEmoteSpells() const;
 	bool checkSpellNameInsteadOfWords() const;
+	bool checkMute() const;
 
 	QuickLootFilter_t getQuickLootFilter() const;
 
@@ -1247,6 +1277,14 @@ public:
 	 */
 	std::vector<std::shared_ptr<Item>> getEquippedItems() const;
 
+	/**
+	 * @brief Get the equipped item in the specified slot.
+	 * @details This function returns the item currently equipped in the given slot, or nullptr if the slot is empty or invalid.
+	 * @param slot The slot from which to retrieve the equipped item.
+	 * @return A pointer to the equipped item, or nullptr if no item is equipped in the specified slot.
+	 */
+	std::shared_ptr<Item> getEquippedItem(Slots_t slot) const;
+
 	// Player wheel interface
 	std::unique_ptr<PlayerWheel> &wheel();
 	const std::unique_ptr<PlayerWheel> &wheel() const;
@@ -1263,13 +1301,17 @@ public:
 	std::unique_ptr<PlayerTitle> &title();
 	const std::unique_ptr<PlayerTitle> &title() const;
 
-	// Player summary interface
+	// Player cyclopedia interface
 	std::unique_ptr<PlayerCyclopedia> &cyclopedia();
 	const std::unique_ptr<PlayerCyclopedia> &cyclopedia() const;
 
 	// Player vip interface
 	std::unique_ptr<PlayerVIP> &vip();
 	const std::unique_ptr<PlayerVIP> &vip() const;
+
+	// Player animusMastery interface
+	AnimusMastery &animusMastery();
+	const AnimusMastery &animusMastery() const;
 
 	void sendLootMessage(const std::string &message) const;
 
@@ -1595,6 +1637,8 @@ private:
 	bool moved = false;
 	bool m_isDead = false;
 	bool imbuementTrackerWindowOpen = false;
+	bool requestedOutfit = false;
+	bool outfitAttributes = false;
 
 	// Hazard system
 	int64_t lastHazardSystemCriticalHit = 0;
@@ -1671,6 +1715,7 @@ private:
 	std::unique_ptr<PlayerCyclopedia> m_playerCyclopedia;
 	std::unique_ptr<PlayerTitle> m_playerTitle;
 	std::unique_ptr<PlayerVIP> m_playerVIP;
+	AnimusMastery m_animusMastery;
 
 	std::mutex quickLootMutex;
 

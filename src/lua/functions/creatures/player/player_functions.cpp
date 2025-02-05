@@ -26,6 +26,7 @@
 #include "creatures/players/achievement/player_achievement.hpp"
 #include "creatures/players/cyclopedia/player_cyclopedia.hpp"
 #include "creatures/players/cyclopedia/player_title.hpp"
+#include "creatures/players/animus_mastery/animus_mastery.hpp"
 #include "creatures/players/player.hpp"
 #include "creatures/players/vip/player_vip.hpp"
 #include "creatures/players/vocations/vocation.hpp"
@@ -35,6 +36,7 @@
 #include "game/scheduling/save_manager.hpp"
 #include "io/iobestiary.hpp"
 #include "io/iologindata.hpp"
+#include "io/functions/iologindata_save_player.hpp"
 #include "io/ioprey.hpp"
 #include "items/containers/depot/depotchest.hpp"
 #include "items/containers/depot/depotlocker.hpp"
@@ -415,6 +417,10 @@ void PlayerFunctions::init(lua_State* L) {
 	Lua::registerMethod(L, "Player", "removeIconBakragore", PlayerFunctions::luaPlayerRemoveIconBakragore);
 	Lua::registerMethod(L, "Player", "sendCreatureAppear", PlayerFunctions::luaPlayerSendCreatureAppear);
 
+	Lua::registerMethod(L, "Player", "addAnimusMastery", PlayerFunctions::luaPlayerAddAnimusMastery);
+	Lua::registerMethod(L, "Player", "removeAnimusMastery", PlayerFunctions::luaPlayerRemoveAnimusMastery);
+	Lua::registerMethod(L, "Player", "hasAnimusMastery", PlayerFunctions::luaPlayerHasAnimusMastery);
+
 	GroupFunctions::init(L);
 	GuildFunctions::init(L);
 	MountFunctions::init(L);
@@ -479,6 +485,40 @@ int PlayerFunctions::luaPlayerUpdateSupplyTracker(lua_State* L) {
 	player->updateSupplyTracker(item);
 	Lua::pushBoolean(L, true);
 
+	return 1;
+}
+
+int PlayerFunctions::luaPlayerAddAnimusMastery(lua_State* L) {
+	auto player = Lua::getUserdataShared<Player>(L, 1);
+	if (!player) {
+		Lua::reportErrorFunc(Lua::getErrorDesc(LUA_ERROR_PLAYER_NOT_FOUND));
+		return 1;
+	}
+	const std::string &monsterType = Lua::getString(L, 2);
+	player->animusMastery().add(monsterType);
+	return 1;
+}
+
+int PlayerFunctions::luaPlayerRemoveAnimusMastery(lua_State* L) {
+	auto player = Lua::getUserdataShared<Player>(L, 1);
+	if (!player) {
+		Lua::reportErrorFunc(Lua::getErrorDesc(LUA_ERROR_PLAYER_NOT_FOUND));
+		return 1;
+	}
+	const std::string &monsterType = Lua::getString(L, 2);
+	player->animusMastery().remove(monsterType);
+	return 1;
+}
+
+int PlayerFunctions::luaPlayerHasAnimusMastery(lua_State* L) {
+	auto player = Lua::getUserdataShared<Player>(L, 1);
+	if (!player) {
+		Lua::reportErrorFunc(Lua::getErrorDesc(LUA_ERROR_PLAYER_NOT_FOUND));
+		return 1;
+	}
+	const std::string &monsterType = Lua::getString(L, 2);
+	bool has = player->animusMastery().has(monsterType);
+	Lua::pushBoolean(L, has);
 	return 1;
 }
 
@@ -2733,7 +2773,7 @@ int PlayerFunctions::luaPlayerHasOutfit(lua_State* L) {
 	if (player) {
 		const uint16_t lookType = Lua::getNumber<uint16_t>(L, 2);
 		const auto addon = Lua::getNumber<uint8_t>(L, 3, 0);
-		Lua::pushBoolean(L, player->canWear(lookType, addon));
+		Lua::pushBoolean(L, player->canWearOutfit(lookType, addon));
 	} else {
 		lua_pushnil(L);
 	}
@@ -4173,13 +4213,11 @@ int PlayerFunctions::luaPlayerChangeName(lua_State* L) {
 		Lua::pushBoolean(L, false);
 		return 0;
 	}
-	if (player->isOnline()) {
-		player->removePlayer(true, true);
-	}
+
 	player->kv()->remove("namelock");
 	const auto newName = Lua::getString(L, 2);
-	player->setName(newName);
-	g_saveManager().savePlayer(player);
+	const auto oldName = player->getName();
+	IOLoginDataSave::savePlayerNamesAndChangeName(player, newName, oldName);
 	return 1;
 }
 

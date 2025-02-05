@@ -27,6 +27,7 @@
 #include "creatures/monsters/monster.hpp"
 #include "creatures/monsters/monsters.hpp"
 #include "creatures/npcs/npc.hpp"
+#include "creatures/players/animus_mastery/animus_mastery.hpp"
 #include "creatures/players/wheel/player_wheel.hpp"
 #include "creatures/players/wheel/wheel_gems.hpp"
 #include "creatures/players/achievement/player_achievement.hpp"
@@ -45,6 +46,7 @@
 #include "enums/object_category.hpp"
 #include "enums/player_blessings.hpp"
 #include "enums/player_icons.hpp"
+#include "enums/player_cyclopedia.hpp"
 #include "game/game.hpp"
 #include "game/modal_window/modal_window.hpp"
 #include "game/scheduling/dispatcher.hpp"
@@ -79,7 +81,8 @@ Player::Player(std::shared_ptr<ProtocolGame> p) :
 	lastPong(lastPing),
 	lastLoad(OTSYS_TIME()),
 	inbox(std::make_shared<Inbox>(ITEM_INBOX)),
-	client(std::move(p)) {
+	client(std::move(p)),
+	m_animusMastery(*this) {
 	m_playerVIP = std::make_unique<PlayerVIP>(*this);
 	m_wheelPlayer = std::make_unique<PlayerWheel>(*this);
 	m_playerAchievement = std::make_unique<PlayerAchievement>(*this);
@@ -946,11 +949,15 @@ void Player::setVarStats(stats_t stat, int32_t modifier) {
 int32_t Player::getDefaultStats(stats_t stat) const {
 	switch (stat) {
 		case STAT_MAXHITPOINTS:
-			return healthMax;
+			return getMaxHealth() - getVarStats(STAT_MAXHITPOINTS);
 		case STAT_MAXMANAPOINTS:
-			return manaMax;
+			return getMaxMana() - getVarStats(STAT_MAXMANAPOINTS);
 		case STAT_MAGICPOINTS:
-			return getBaseMagicLevel();
+			return getBaseMagicLevel() - getVarStats(STAT_MAGICPOINTS);
+		case STAT_SOULPOINTS:
+			return getSoul() - getVarStats(STAT_SOULPOINTS);
+		case STAT_CAPACITY:
+			return getBaseCapacity() - getVarStats(STAT_CAPACITY);
 		default:
 			return 0;
 	}
@@ -2287,10 +2294,34 @@ void Player::sendOutfitWindow() const {
 	}
 }
 
+// House auction
+void Player::sendCyclopediaHouseList(const HouseMap &houses) const {
+	if (client) {
+		client->sendCyclopediaHouseList(houses);
+	}
+}
+void Player::sendResourceBalance(Resource_t resourceType, uint64_t value) const {
+	if (client) {
+		client->sendResourceBalance(resourceType, value);
+	}
+}
+void Player::sendHouseAuctionMessage(uint32_t houseId, HouseAuctionType type, uint8_t index, bool bidSuccess /* = false*/) const {
+	if (client) {
+		client->sendHouseAuctionMessage(houseId, type, index, bidSuccess);
+	}
+}
+
 // Imbuements
 
 void Player::onApplyImbuement(const Imbuement* imbuement, const std::shared_ptr<Item> &item, uint8_t slot, bool protectionCharm) {
 	if (!imbuement || !item) {
+		return;
+	}
+
+	auto itemSlots = item->getImbuementSlot();
+	if (slot >= itemSlots) {
+		g_logger().error("[Player::onApplyImbuement] - Player {} attempted to apply imbuement in an invalid slot ({})", this->getName(), slot);
+		this->sendImbuementResult("Invalid slot selection.");
 		return;
 	}
 
@@ -2299,6 +2330,20 @@ void Player::onApplyImbuement(const Imbuement* imbuement, const std::shared_ptr<
 		g_logger().error("[Player::onApplyImbuement] - An error occurred while player with name {} try to apply imbuement, item already contains imbuement", this->getName());
 		this->sendImbuementResult("An error ocurred, please reopen imbuement window.");
 		return;
+	}
+
+	for (uint8_t i = 0; i < item->getImbuementSlot(); i++) {
+		if (i == slot) {
+			continue;
+		}
+		ImbuementInfo existingImbuement;
+		if (item->getImbuementInfo(i, &existingImbuement) && existingImbuement.imbuement) {
+			if (existingImbuement.imbuement->getName() == imbuement->getName()) {
+				g_logger().error("[Player::onApplyImbuement] - Player {} attempted to apply the same imbuement in multiple slots", this->getName());
+				this->sendImbuementResult("You cannot apply the same imbuement in multiple slots.");
+				return;
+			}
+		}
 	}
 
 	const auto &items = imbuement->getItems();
@@ -3119,6 +3164,14 @@ void Player::addExperience(const std::shared_ptr<Creature> &target, uint64_t exp
 		exp += (exp * (1.75 * getHazardSystemPoints() * g_configManager().getFloat(HAZARD_EXP_BONUS_MULTIPLIER))) / 100.;
 	}
 
+	const bool handleAnimusMastery = monster && animusMastery().has(monster->getMonsterType()->name);
+	float animusMasteryMultiplier = 0;
+
+	if (handleAnimusMastery) {
+		animusMasteryMultiplier = animusMastery().getExperienceMultiplier();
+		exp *= animusMasteryMultiplier;
+	}
+
 	experience += exp;
 
 	if (sendText) {
@@ -3128,6 +3181,10 @@ void Player::addExperience(const std::shared_ptr<Creature> &target, uint64_t exp
 			if (expPercent > 0) {
 				expString = expString + fmt::format(" (VIP bonus {}%)", expPercent > 100 ? 100 : expPercent);
 			}
+		}
+
+		if (handleAnimusMastery) {
+			expString = fmt::format("{} (animus mastery bonus {:.1f}%)", expString, (animusMasteryMultiplier - 1) * 100);
 		}
 
 		TextMessage message(MESSAGE_EXPERIENCE, "You gained " + expString + (handleHazardExperience ? " (Hazard)" : ""));
@@ -5182,19 +5239,21 @@ bool Player::checkAutoLoot(bool isBoss) const {
 
 bool Player::checkChainSystem() const {
 	if (!g_configManager().getBoolean(TOGGLE_CHAIN_SYSTEM)) {
+		kv()->scoped("features")->set("chainSystem", false);
 		return false;
 	}
 
 	if (g_configManager().getBoolean(VIP_SYSTEM_ENABLED) && g_configManager().getBoolean(CHAIN_SYSTEM_VIP_ONLY) && !isVip()) {
+		kv()->scoped("features")->set("chainSystem", false);
 		return false;
 	}
 
 	auto featureKV = kv()->scoped("features")->get("chainSystem");
 	if (featureKV.has_value()) {
-		auto value = featureKV->getNumber();
-		if (value == 1) {
+		auto value = featureKV->get<bool>();
+		if (value) {
 			return true;
-		} else if (value == 0) {
+		} else {
 			return false;
 		}
 	}
@@ -5204,15 +5263,16 @@ bool Player::checkChainSystem() const {
 
 bool Player::checkEmoteSpells() const {
 	if (!g_configManager().getBoolean(EMOTE_SPELLS)) {
+		kv()->scoped("features")->set("emoteSpells", false);
 		return false;
 	}
 
 	auto featureKV = kv()->scoped("features")->get("emoteSpells");
 	if (featureKV.has_value()) {
-		auto value = featureKV->getNumber();
-		if (value == 1) {
+		auto value = featureKV->get<bool>();
+		if (value) {
 			return true;
-		} else if (value == 0) {
+		} else {
 			return false;
 		}
 	}
@@ -5222,15 +5282,30 @@ bool Player::checkEmoteSpells() const {
 
 bool Player::checkSpellNameInsteadOfWords() const {
 	if (!g_configManager().getBoolean(SPELL_NAME_INSTEAD_WORDS)) {
+		kv()->scoped("features")->set("spellNameInsteadOfWords", false);
 		return false;
 	}
 
 	auto featureKV = kv()->scoped("features")->get("spellNameInsteadOfWords");
 	if (featureKV.has_value()) {
-		auto value = featureKV->getNumber();
-		if (value == 1) {
+		auto value = featureKV->get<bool>();
+		if (value) {
 			return true;
-		} else if (value == 0) {
+		} else {
+			return false;
+		}
+	}
+
+	return false;
+}
+
+bool Player::checkMute() const {
+	auto featureKV = kv()->scoped("features")->get("mutePlayer");
+	if (featureKV.has_value()) {
+		auto value = featureKV->get<bool>();
+		if (value) {
+			return true;
+		} else {
 			return false;
 		}
 	}
@@ -5456,6 +5531,15 @@ std::vector<std::shared_ptr<Item>> Player::getEquippedItems() const {
 	}
 
 	return valid_items;
+}
+
+std::shared_ptr<Item> Player::getEquippedItem(Slots_t slot) const {
+	if (slot < CONST_SLOT_FIRST || slot >= CONST_SLOT_LAST) {
+		return nullptr;
+	}
+
+	const auto &item = inventory[slot];
+	return item;
 }
 
 std::map<uint32_t, uint32_t> &Player::getAllItemTypeCount(std::map<uint32_t, uint32_t> &countMap) const {
@@ -6060,17 +6144,23 @@ bool Player::onKilledMonster(const std::shared_ptr<Monster> &monster) {
 	if (hasFlag(PlayerFlags_t::NotGenerateLoot)) {
 		monster->setDropLoot(false);
 	}
+
 	if (monster->hasBeenSummoned()) {
 		return false;
 	}
+
 	const auto &mType = monster->getMonsterType();
 	if (mType == nullptr) {
 		g_logger().error("[{}] Monster type is null.", __FUNCTION__);
 		return false;
 	}
-	addHuntingTaskKill(mType);
-	addBestiaryKill(mType);
-	addBosstiaryKill(mType);
+
+	if (!monster->getSoulPit()) {
+		addHuntingTaskKill(mType);
+		addBestiaryKill(mType);
+		addBosstiaryKill(mType);
+	}
+
 	return false;
 }
 
@@ -6168,9 +6258,26 @@ void Player::changeSoul(int32_t soulChange) {
 	sendStats();
 }
 
-bool Player::canWear(uint16_t lookType, uint8_t addons) const {
+bool Player::changeOutfit(Outfit_t outfit, bool checkList) {
+	auto outfitId = Outfits::getInstance().getOutfitId(getSex(), outfit.lookType);
+	if (checkList && (!canWearOutfit(outfitId, outfit.lookAddons) || !requestedOutfit)) {
+		return false;
+	}
+
+	requestedOutfit = false;
+	if (outfitAttributes) {
+		auto oldId = Outfits::getInstance().getOutfitId(getSex(), defaultOutfit.lookType);
+		outfitAttributes = !Outfits::getInstance().removeAttributes(getID(), oldId, getSex());
+	}
+
+	defaultOutfit = outfit;
+	outfitAttributes = Outfits::getInstance().addAttributes(getID(), outfitId, getSex(), defaultOutfit.lookAddons);
+	return true;
+}
+
+bool Player::canWearOutfit(uint16_t lookType, uint8_t addons) const {
 	if (g_configManager().getBoolean(WARN_UNSAFE_SCRIPTS) && lookType != 0 && !g_game().isLookTypeRegistered(lookType)) {
-		g_logger().warn("[Player::canWear] An unregistered creature looktype type with id '{}' was blocked to prevent client crash.", lookType);
+		g_logger().warn("[Player::canWearOutfit] An unregistered creature looktype type with id '{}' was blocked to prevent client crash.", lookType);
 		return false;
 	}
 
@@ -6533,7 +6640,7 @@ void Player::clearAttacked() {
 }
 
 void Player::addUnjustifiedDead(const std::shared_ptr<Player> &attacked) {
-	if (hasFlag(PlayerFlags_t::NotGainInFight) || attacked == getPlayer() || g_game().getWorldType() == WORLD_TYPE_PVP_ENFORCED) {
+	if (hasFlag(PlayerFlags_t::NotGainInFight) || hasFlag(PlayerFlags_t::NotGainUnjustified) || attacked == getPlayer() || g_game().getWorldType() == WORLD_TYPE_PVP_ENFORCED) {
 		return;
 	}
 
@@ -6627,6 +6734,19 @@ uint32_t Player::getAttackSpeed() const {
 				modifiers = 0;
 			} else {
 				modifiers += mount->attackSpeed;
+			}
+		}
+	}
+
+	if (outfitAttributes) {
+		const auto &outfit = Outfits::getInstance().getOutfitByLookType(getPlayer(), defaultOutfit.lookType);
+		if (outfit) {
+			if (outfit->attackSpeed > 0) {
+				if (outfit->attackSpeed >= vocation->getAttackSpeed()) {
+					modifiers = 0;
+				} else {
+					modifiers += outfit->attackSpeed;
+				}
 			}
 		}
 	}
@@ -6762,6 +6882,17 @@ uint32_t Player::getMaxMana() const {
 
 bool Player::hasExtraSwing() {
 	return lastAttack > 0 && !checkLastAttackWithin(getAttackSpeed());
+}
+
+int32_t Player::getSkill(skills_t skilltype, SkillsId_t skillinfo) const {
+	const Skill &skill = skills[skilltype];
+	int32_t ret = 0;
+
+	if (skillinfo == SKILLVALUE_LEVEL) {
+		ret = skill.level + varSkills[skilltype];
+	}
+
+	return std::max(0, ret);
 }
 
 uint16_t Player::getSkillLevel(skills_t skill) const {
@@ -7191,7 +7322,13 @@ uint8_t Player::getLastMount() const {
 	if (value > 0) {
 		return value;
 	}
-	return static_cast<uint8_t>(kv()->get("last-mount")->get<int>());
+
+	const auto lastMount = kv()->get("last-mount");
+	if (!lastMount.has_value()) {
+		return 0;
+	}
+
+	return static_cast<uint8_t>(lastMount->get<int>());
 }
 
 uint8_t Player::getCurrentMount() const {
@@ -7361,7 +7498,7 @@ bool Player::untameMount(uint8_t mountId) {
 }
 
 bool Player::hasMount(const std::shared_ptr<Mount> &mount) const {
-	if (isAccessPlayer()) {
+	if (hasFlag(PlayerFlags_t::CanWearAllMounts)) {
 		return true;
 	}
 
@@ -10095,6 +10232,11 @@ void Player::onCreatureAppear(const std::shared_ptr<Creature> &creature, bool is
 	if (isLogin && creature == getPlayer()) {
 		onEquipInventory();
 
+		const auto &outfit = Outfits::getInstance().getOutfitByLookType(getPlayer(), defaultOutfit.lookType);
+		if (outfit) {
+			outfitAttributes = Outfits::getInstance().addAttributes(getID(), defaultOutfit.lookType, getSex(), defaultOutfit.lookAddons);
+		}
+
 		// Refresh bosstiary tracker onLogin
 		refreshCyclopediaMonsterTracker(true);
 		// Refresh bestiary tracker onLogin
@@ -10609,6 +10751,15 @@ const std::unique_ptr<PlayerTitle> &Player::title() const {
 	return m_playerTitle;
 }
 
+// Cyclopedia interface
+std::unique_ptr<PlayerCyclopedia> &Player::cyclopedia() {
+	return m_playerCyclopedia;
+}
+
+const std::unique_ptr<PlayerCyclopedia> &Player::cyclopedia() const {
+	return m_playerCyclopedia;
+}
+
 // VIP interface
 std::unique_ptr<PlayerVIP> &Player::vip() {
 	return m_playerVIP;
@@ -10618,13 +10769,13 @@ const std::unique_ptr<PlayerVIP> &Player::vip() const {
 	return m_playerVIP;
 }
 
-// Cyclopedia
-std::unique_ptr<PlayerCyclopedia> &Player::cyclopedia() {
-	return m_playerCyclopedia;
+// Animus Mastery interface
+AnimusMastery &Player::animusMastery() {
+	return m_animusMastery;
 }
 
-const std::unique_ptr<PlayerCyclopedia> &Player::cyclopedia() const {
-	return m_playerCyclopedia;
+const AnimusMastery &Player::animusMastery() const {
+	return m_animusMastery;
 }
 
 void Player::sendLootMessage(const std::string &message) const {
@@ -10834,4 +10985,88 @@ void Player::removeDeflectCondition(const std::string_view &source, const Condit
 
 void Player::addDeflectCondition(std::string source, ConditionType_t conditionType, uint8_t chance) {
 	deflectConditions.emplace_back(source, conditionType, chance);
+}
+
+BidErrorMessage Player::canBidHouse(uint32_t houseId) {
+	using enum BidErrorMessage;
+	const auto house = g_game().map.houses.getHouseByClientId(houseId);
+	if (!house) {
+		return Internal;
+	}
+	if (getPlayerVocationEnum() == Vocation_t::VOCATION_NONE) {
+		return Rookgaard;
+	}
+	if (!isPremium()) {
+		return Premium;
+	}
+	if (getAccount()->getHouseBidId() != 0) {
+		return OnlyOneBid;
+	}
+	if (getBankBalance() < (house->getRent() + house->getHighestBid())) {
+		return NotEnoughMoney;
+	}
+	if (house->isGuildhall()) {
+		if (getGuildRank() && getGuildRank()->level != 3) {
+			return Guildhall;
+		}
+		if (getGuild() && getGuild()->getBankBalance() < (house->getRent() + house->getHighestBid())) {
+			return NotEnoughGuildMoney;
+		}
+	}
+	return NoError;
+}
+
+TransferErrorMessage Player::canTransferHouse(uint32_t houseId, uint32_t newOwnerGUID) {
+	using enum TransferErrorMessage;
+	const auto house = g_game().map.houses.getHouseByClientId(houseId);
+	if (!house) {
+		return Internal;
+	}
+	if (getGUID() != house->getOwner()) {
+		return NotHouseOwner;
+	}
+	if (getGUID() == newOwnerGUID) {
+		return AlreadyTheOwner;
+	}
+	const auto newOwner = g_game().getPlayerByGUID(newOwnerGUID, true);
+	if (!newOwner) {
+		return CharacterNotExist;
+	}
+	if (newOwner->getPlayerVocationEnum() == Vocation_t::VOCATION_NONE) {
+		return Rookgaard;
+	}
+	if (!newOwner->isPremium()) {
+		return Premium;
+	}
+	if (newOwner->getAccount()->getHouseBidId() != 0) {
+		return OnlyOneBid;
+	}
+	return Success;
+}
+
+AcceptTransferErrorMessage Player::canAcceptTransferHouse(uint32_t houseId) {
+	using enum AcceptTransferErrorMessage;
+	const auto house = g_game().map.houses.getHouseByClientId(houseId);
+	if (!house) {
+		return Internal;
+	}
+	if (getGUID() != house->getBidder()) {
+		return NotNewOwner;
+	}
+	if (!isPremium()) {
+		return Premium;
+	}
+	if (getAccount()->getHouseBidId() != 0) {
+		return AlreadyBid;
+	}
+	if (getPlayerVocationEnum() == Vocation_t::VOCATION_NONE) {
+		return Rookgaard;
+	}
+	if (getBankBalance() < (house->getRent() + house->getInternalBid())) {
+		return Frozen;
+	}
+	if (house->getTransferStatus()) {
+		return AlreadyAccepted;
+	}
+	return Success;
 }
