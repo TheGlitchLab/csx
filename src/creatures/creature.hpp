@@ -565,10 +565,6 @@ public:
 	bool registerCreatureEvent(const std::string &name);
 	bool unregisterCreatureEvent(const std::string &name);
 
-	std::shared_ptr<Cylinder> getParent() final;
-
-	void setParent(std::weak_ptr<Cylinder> cylinder) final;
-
 	const Position &getPosition() override final {
 		return position;
 	}
@@ -870,17 +866,6 @@ private:
 			duration = 0;
 		}
 	} walk;
-
-	void updateCalculatedStepSpeed() {
-		const auto stepSpeed = getStepSpeed();
-		walk.calculatedStepSpeed = 1;
-		if (stepSpeed > -Creature::speedB) {
-			const auto formula = std::floor((Creature::speedA * log(stepSpeed + Creature::speedB) + Creature::speedC) + .5);
-			walk.calculatedStepSpeed = static_cast<uint16_t>(std::max(formula, 1.));
-		}
-
-		walk.recache();
-	}
 
 	uint8_t m_flagAsyncTask = 0;
 };

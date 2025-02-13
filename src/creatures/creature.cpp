@@ -1457,8 +1457,6 @@ void Creature::setSpeed(int32_t varSpeedDelta) {
 	} else if (oldSpeed <= 0 && !listWalkDir.empty()) {
 		addEventWalk();
 	}
-
-	updateCalculatedStepSpeed();
 }
 
 void Creature::setCreatureLight(LightInfo lightInfo) {
@@ -1521,32 +1519,6 @@ bool Creature::unregisterCreatureEvent(const std::string &name) {
 		scriptEventsBitField &= ~(static_cast<uint32_t>(1) << type);
 	}
 	return true;
-}
-
-std::shared_ptr<Cylinder> Creature::getParent() {
-	return getTile();
-}
-
-void Creature::setParent(std::weak_ptr<Cylinder> cylinder) {
-	const auto oldGroundSpeed = walk.groundSpeed;
-	walk.groundSpeed = 150;
-
-	if (const auto &lockedCylinder = cylinder.lock()) {
-		const auto &newParent = lockedCylinder->getTile();
-		position = newParent->getPosition();
-		m_tile = newParent;
-
-		if (newParent->getGround()) {
-			const auto &it = Item::items[newParent->getGround()->getID()];
-			if (it.speed > 0) {
-				walk.groundSpeed = it.speed;
-			}
-		}
-	}
-
-	if (walk.groundSpeed != oldGroundSpeed) {
-		walk.recache();
-	}
 }
 
 // creature script events

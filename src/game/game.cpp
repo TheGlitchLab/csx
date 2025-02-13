@@ -1160,7 +1160,6 @@ bool Game::internalPlaceCreature(const std::shared_ptr<Creature> &creature, cons
 
 	creature->setID();
 	creature->addList();
-	creature->updateCalculatedStepSpeed();
 
 	if (creatureCheck) {
 		addCreatureCheck(creature);
