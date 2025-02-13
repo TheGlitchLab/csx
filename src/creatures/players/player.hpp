@@ -223,6 +223,13 @@ public:
 	uint32_t getGUID() const;
 	bool canSeeInvisibility() const override;
 
+	void setIgnoreFriction(bool newState) {
+		ignoreFriction = newState;
+	}
+	bool isIgnoringFriction() const {
+		return ignoreFriction;
+	}
+
 	void setDailyReward(uint8_t reward);
 
 	void removeList() override;
@@ -1636,6 +1643,7 @@ private:
 	bool imbuementTrackerWindowOpen = false;
 	bool requestedOutfit = false;
 	bool outfitAttributes = false;
+	bool ignoreFriction = false;
 
 	// Hazard system
 	int64_t lastHazardSystemCriticalHit = 0;

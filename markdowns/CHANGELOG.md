@@ -7,6 +7,8 @@
 ### Features
 
 - Added a new feature to unlock cosmetics in `config.lua`: `unlockAllOutfits`, `unlockAllMounts`, and `unlockAllFamiliars`. ([Tryller](https://github.com/jprzimba))
+- Added friction to player speed with two new Lua functions: `player:isIgnoringFriction()` and `player:setIgnoreFriction(mode)`. ([Tryller](https://github.com/jprzimba))
+
 
 ## Added files
 - NOTTING

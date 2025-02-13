@@ -202,11 +202,13 @@ public:
 
 	int32_t getWalkSize();
 
-	int32_t getWalkDelay(Direction dir = DIRECTION_NONE);
+	int32_t getWalkDelay(Direction dir);
+	int32_t getWalkDelay();;
 	int64_t getTimeSinceLastMove() const;
 
 	int64_t getEventStepTicks(bool onlyDelay = false);
-	uint16_t getStepDuration(Direction dir = DIRECTION_NONE);
+	int64_t getStepDuration(Direction dir);
+	int64_t getStepDuration();
 	virtual uint16_t getStepSpeed() const {
 		return getSpeed();
 	}
@@ -565,6 +567,10 @@ public:
 	bool registerCreatureEvent(const std::string &name);
 	bool unregisterCreatureEvent(const std::string &name);
 
+	std::shared_ptr<Cylinder> getParent() final;
+
+	void setParent(std::weak_ptr<Cylinder> cylinder) final;
+
 	const Position &getPosition() override final {
 		return position;
 	}
@@ -853,19 +859,6 @@ private:
 	void handleLostSummon(bool teleportSummons);
 
 	std::vector<std::function<void()>> asyncTasks;
-
-	struct {
-		uint16_t groundSpeed { 0 };
-		uint16_t calculatedStepSpeed { 1 };
-		uint16_t duration { 0 };
-
-		bool needRecache() const {
-			return duration == 0;
-		}
-		void recache() {
-			duration = 0;
-		}
-	} walk;
 
 	uint8_t m_flagAsyncTask = 0;
 };

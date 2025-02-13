@@ -398,5 +398,8 @@ class PlayerFunctions {
 	static int luaPlayerRemoveAnimusMastery(lua_State* L);
 	static int luaPlayerHasAnimusMastery(lua_State* L);
 
+	static int luaPlayerIsIgnoringFriction(lua_State* L);
+	static int luaPlayerSetIgnoreFriction(lua_State* L);
+
 	friend class CreatureFunctions;
 };

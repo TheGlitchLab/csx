@@ -421,6 +421,9 @@ void PlayerFunctions::init(lua_State* L) {
 	Lua::registerMethod(L, "Player", "removeAnimusMastery", PlayerFunctions::luaPlayerRemoveAnimusMastery);
 	Lua::registerMethod(L, "Player", "hasAnimusMastery", PlayerFunctions::luaPlayerHasAnimusMastery);
 
+	Lua::registerMethod(L, "Player", "isIgnoringFriction", PlayerFunctions::luaPlayerIsIgnoringFriction);
+	Lua::registerMethod(L, "Player", "setIgnoreFriction", PlayerFunctions::luaPlayerSetIgnoreFriction);
+
 	GroupFunctions::init(L);
 	GuildFunctions::init(L);
 	MountFunctions::init(L);
@@ -4947,6 +4950,33 @@ int PlayerFunctions::luaPlayerRemoveDeflectCondition(lua_State* L) {
 	auto conditionType = Lua::getNumber<ConditionType_t>(L, 3);
 	auto deflectChance = Lua::getNumber<uint8_t>(L, 4);
 	player->removeDeflectCondition(source, conditionType, deflectChance);
+	Lua::pushBoolean(L, true);
+	return 1;
+}
+
+int PlayerFunctions::luaPlayerIsIgnoringFriction(lua_State* L)
+{
+	// player:isIgnoringFriction()
+	const auto &player = Lua::getUserdataShared<Player>(L, 1);
+	if (!player) {
+		Lua::reportErrorFunc(Lua::getErrorDesc(LUA_ERROR_PLAYER_NOT_FOUND));
+		return 1;
+	}
+
+	Lua::pushBoolean(L, player->isIgnoringFriction());
+	return 1;
+}
+
+int PlayerFunctions::luaPlayerSetIgnoreFriction(lua_State* L)
+{
+	// player:setIgnoreFriction(mode)
+	const auto &player = Lua::getUserdataShared<Player>(L, 1);
+	if (!player) {
+		Lua::reportErrorFunc(Lua::getErrorDesc(LUA_ERROR_PLAYER_NOT_FOUND));
+		return 1;
+	}
+
+	player->setIgnoreFriction(Lua::getBoolean(L, 2));
 	Lua::pushBoolean(L, true);
 	return 1;
 }
