@@ -139,9 +139,10 @@ function playerLoginGlobal.onLogin(player)
 		end
 	end
 
-	-- Set Ghost Mode
+	-- Set Special Group Features
 	if player:getGroup():getId() >= GROUP_TYPE_GAMEMASTER and player:getGroup():getId() < GROUP_TYPE_TESTER then
 		player:setGhostMode(true)
+		player:setIgnoreFriction(true)
 	end
 
 	-- Resets

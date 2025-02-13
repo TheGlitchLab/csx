@@ -29,6 +29,7 @@
 
 - config.lua
 - data/scripts/actions/items/potions.lua
+- data/scripts/creaturescripts/player/login.lua
 
 
 ## Version 4.1.3
