@@ -2,6 +2,7 @@
 
 -- Core settings
 -- If you want to use the global datapack folder, put "data-global"
+-- if you want use Crystal Server map, put "data-crystal"
 dataPackDirectory = "data-global"
 -- Don't change this unless you know what you're doing
 coreDirectory = "data"
@@ -107,7 +108,7 @@ maxItem = 5000
 maxContainer = 500
 maxContainerDepth = 200
 
--- Animus Mastery - SoulPit (Get more info in: https://github.com/opentibiabr/canary/pull/3230)
+-- Animus Mastery - SoulPit
 -- NOTE: animusMasteryMaxMonsterXpMultiplier is the maximum experience the multiplier can be.
 -- NOTE: animusMasteryMonsterXpMultiplier is the monster experience multiplier that has the animus mastery unlocked.
 -- NOTE: animusMasteryMonstersXpMultiplier is the multiplier for each 'animusMasteryMonstersToIncreaseXpMultiplier' monsters that
@@ -291,7 +292,6 @@ onlyPremiumAccount = false
 -- NOTE: startStreakLevel will make a reward streak level for new players who never logged in
 -- NOTE: if showLootsInBestiary is true, will cause all loots to be shown in the bestiary even if the player has not reached the required number of kills
 -- NOTE: minTownIdToBankTransferFromMain blocks towns less than defined from receiving money transfers
--- NOTE: enableSupportOutfit enable GODS and GMS to select support outfit (gamemaster, customer support or community manager)
 stashMoving = false
 stashItemCount = 5000
 depotChest = 4
@@ -311,7 +311,13 @@ enablePlayerPutItemInAmmoSlot = false
 startStreakLevel = 0
 showLootsInBestiary = false
 minTownIdToBankTransferFromMain = 4
+
+-- Cosmetics
+-- NOTE: enableSupportOutfit enable GODS and GMS to select support outfit (gamemaster, customer support or community manager)
 enableSupportOutfit = true
+unlockAllOutfits = false
+unlockAllMounts = false
+unlockAllFamiliars = false
 
 -- Teleport summon
 -- Set to true will never remove the summon

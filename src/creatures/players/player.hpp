@@ -223,6 +223,13 @@ public:
 	uint32_t getGUID() const;
 	bool canSeeInvisibility() const override;
 
+	void setIgnoreFriction(bool newState) {
+		ignoreFriction = newState;
+	}
+	bool isIgnoringFriction() const {
+		return ignoreFriction;
+	}
+
 	void setDailyReward(uint8_t reward);
 
 	void removeList() override;
@@ -472,9 +479,6 @@ public:
 	}
 	uint8_t getSoul() const {
 		return soul;
-	}
-	uint8_t getFullSoul() const {
-		return getSoul() + getVarStats(STAT_SOULPOINTS);
 	}
 	bool isAccessPlayer() const;
 	bool isPlayerGroup() const;
@@ -956,7 +960,7 @@ public:
 	void resetAsyncOngoingTask(uint64_t flags);
 	void sendEnterWorld() const;
 	void sendFightModes() const;
-	void sendNetworkMessage(const NetworkMessage &message) const;
+	void sendNetworkMessage(NetworkMessage &message) const;
 
 	void receivePing();
 
@@ -1639,6 +1643,7 @@ private:
 	bool imbuementTrackerWindowOpen = false;
 	bool requestedOutfit = false;
 	bool outfitAttributes = false;
+	bool ignoreFriction = false;
 
 	// Hazard system
 	int64_t lastHazardSystemCriticalHit = 0;

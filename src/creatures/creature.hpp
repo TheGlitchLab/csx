@@ -202,11 +202,13 @@ public:
 
 	int32_t getWalkSize();
 
-	int32_t getWalkDelay(Direction dir = DIRECTION_NONE);
+	int32_t getWalkDelay(Direction dir);
+	int32_t getWalkDelay();;
 	int64_t getTimeSinceLastMove() const;
 
 	int64_t getEventStepTicks(bool onlyDelay = false);
-	uint16_t getStepDuration(Direction dir = DIRECTION_NONE);
+	int64_t getStepDuration(Direction dir);
+	int64_t getStepDuration();
 	virtual uint16_t getStepSpeed() const {
 		return getSpeed();
 	}
@@ -857,30 +859,6 @@ private:
 	void handleLostSummon(bool teleportSummons);
 
 	std::vector<std::function<void()>> asyncTasks;
-
-	struct {
-		uint16_t groundSpeed { 0 };
-		uint16_t calculatedStepSpeed { 1 };
-		uint16_t duration { 0 };
-
-		bool needRecache() const {
-			return duration == 0;
-		}
-		void recache() {
-			duration = 0;
-		}
-	} walk;
-
-	void updateCalculatedStepSpeed() {
-		const auto stepSpeed = getStepSpeed();
-		walk.calculatedStepSpeed = 1;
-		if (stepSpeed > -Creature::speedB) {
-			const auto formula = std::floor((Creature::speedA * log(stepSpeed + Creature::speedB) + Creature::speedC) + .5);
-			walk.calculatedStepSpeed = static_cast<uint16_t>(std::max(formula, 1.));
-		}
-
-		walk.recache();
-	}
 
 	uint8_t m_flagAsyncTask = 0;
 };

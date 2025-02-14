@@ -88,13 +88,17 @@ int32_t Creature::getWalkDelay(Direction dir) {
 		return 0;
 	}
 
-	const int64_t ct = OTSYS_TIME();
-	uint16_t stepDuration = getStepDuration(dir);
-	if (dir == DIRECTION_NONE) {
-		stepDuration *= lastStepCost;
+	int64_t ct = OTSYS_TIME();
+	int64_t stepDuration = getStepDuration(dir);
+	return stepDuration - (ct - lastStep);
+}
+
+int32_t Creature::getWalkDelay() {
+	if (lastStep) {
+		return getStepDuration() - (OTSYS_TIME() - lastStep);
 	}
 
-	return stepDuration - (ct - lastStep);
+	return 0;
 }
 
 int32_t Creature::getWalkSize() {
@@ -1402,37 +1406,76 @@ bool Creature::hasCondition(ConditionType_t type, uint32_t subId /* = 0*/) const
 	return false;
 }
 
-uint16_t Creature::getStepDuration(Direction dir) {
-	if (isRemoved()) {
+int64_t Creature::getStepDuration(Direction dir) {
+	int64_t stepDuration = getStepDuration();
+	if ((dir & DIRECTION_DIAGONAL_MASK) != 0) {
+		stepDuration *= 3;
+	}
+	return stepDuration;
+}
+
+int64_t Creature::getStepDuration() {
+	if (isInternalRemoved) {
 		return 0;
 	}
 
-	if (walk.needRecache()) {
-		auto duration = std::floor(1000 * walk.groundSpeed / walk.calculatedStepSpeed);
-		walk.duration = static_cast<uint16_t>(std::ceil(duration / SERVER_BEAT) * SERVER_BEAT);
+	// ignore tile friction for god chars
+	const auto &player = getPlayer();
+	if (player && player->isIgnoringFriction()) {
+		return 1;
 	}
 
-	auto duration = walk.duration;
-	if ((dir & DIRECTION_DIAGONAL_MASK) != 0) {
-		duration *= WALK_DIAGONAL_EXTRA_COST;
-	} else if (const auto &monster = getMonster()) {
-		if (monster->isTargetNearby() && !monster->isFleeing() && !monster->getMaster()) {
-			duration *= WALK_TARGET_NEARBY_EXTRA_COST;
+	uint32_t calculatedStepSpeed;
+	uint32_t groundSpeed;
+
+	int32_t stepSpeed = getStepSpeed();
+	if (stepSpeed > -Creature::speedB) {
+		calculatedStepSpeed = floor((Creature::speedA * log((stepSpeed / 2) + Creature::speedB) + Creature::speedC) + 0.5);
+		if (calculatedStepSpeed == 0) {
+			calculatedStepSpeed = 1;
 		}
+	} else {
+		calculatedStepSpeed = 1;
 	}
 
-	return duration;
+	auto playerTile = getTile();
+	if(!playerTile)
+		return 0;
+
+	auto ground = playerTile->getGround();
+	if (ground) {
+		groundSpeed = Item::items[ground->getID()].speed;
+		if (groundSpeed == 0) {
+			groundSpeed = 150;
+		}
+	} else {
+		groundSpeed = 150;
+	}
+
+	double duration = std::floor(1000 * groundSpeed / calculatedStepSpeed);
+	int64_t stepDuration = std::max<int64_t>(1, std::ceil(duration / 50) * 50);
+
+	const auto &monster = getMonster();
+	if (monster && monster->isTargetNearby() && !monster->isFleeing() && !monster->getMaster()) {
+		stepDuration *= 2;
+	}
+
+	return stepDuration;
 }
 
 int64_t Creature::getEventStepTicks(bool onlyDelay) {
 	int64_t ret = getWalkDelay();
 	if (ret <= 0) {
-		const uint16_t stepDuration = getStepDuration();
-		ret = onlyDelay && stepDuration > 0 ? 1 : stepDuration * lastStepCost;
+		int64_t stepDuration = getStepDuration();
+		if (onlyDelay && stepDuration > 0) {
+			ret = 1;
+		} else {
+			ret = stepDuration * lastStepCost;
+		}
 	}
-
 	return ret;
 }
+
 
 LightInfo Creature::getCreatureLight() const {
 	return internalLight;
@@ -1457,8 +1500,6 @@ void Creature::setSpeed(int32_t varSpeedDelta) {
 	} else if (oldSpeed <= 0 && !listWalkDir.empty()) {
 		addEventWalk();
 	}
-
-	updateCalculatedStepSpeed();
 }
 
 void Creature::setCreatureLight(LightInfo lightInfo) {
@@ -1528,24 +1569,10 @@ std::shared_ptr<Cylinder> Creature::getParent() {
 }
 
 void Creature::setParent(std::weak_ptr<Cylinder> cylinder) {
-	const auto oldGroundSpeed = walk.groundSpeed;
-	walk.groundSpeed = 150;
-
 	if (const auto &lockedCylinder = cylinder.lock()) {
 		const auto &newParent = lockedCylinder->getTile();
 		position = newParent->getPosition();
 		m_tile = newParent;
-
-		if (newParent->getGround()) {
-			const auto &it = Item::items[newParent->getGround()->getID()];
-			if (it.speed > 0) {
-				walk.groundSpeed = it.speed;
-			}
-		}
-	}
-
-	if (walk.groundSpeed != oldGroundSpeed) {
-		walk.recache();
 	}
 }
 

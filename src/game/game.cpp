@@ -1160,7 +1160,6 @@ bool Game::internalPlaceCreature(const std::shared_ptr<Creature> &creature, cons
 
 	creature->setID();
 	creature->addList();
-	creature->updateCalculatedStepSpeed();
 
 	if (creatureCheck) {
 		addCreatureCheck(creature);
@@ -10338,7 +10337,7 @@ uint32_t Game::makeFiendishMonster(uint32_t forgeableMonsterId /* = 0*/, bool cr
 	if (monster && monster->canBeForgeMonster()) {
 		monster->setMonsterForgeClassification(ForgeClassifications_t::FORGE_FIENDISH_MONSTER);
 		monster->configureForgeSystem();
-		monster->setTimeToChangeFiendish(timeToChangeFiendish + getTimeNow());
+		monster->setTimeToChangeFiendish(getTimeNow() + finalTime / 1000);
 		fiendishMonsters.emplace(monster->getID());
 
 		auto schedulerTask = createPlayerTask(
