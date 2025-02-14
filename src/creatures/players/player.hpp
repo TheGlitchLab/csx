@@ -473,9 +473,6 @@ public:
 	uint8_t getSoul() const {
 		return soul;
 	}
-	uint8_t getFullSoul() const {
-		return getSoul() + getVarStats(STAT_SOULPOINTS);
-	}
 	bool isAccessPlayer() const;
 	bool isPlayerGroup() const;
 	bool isPremium() const;
@@ -956,7 +953,7 @@ public:
 	void resetAsyncOngoingTask(uint64_t flags);
 	void sendEnterWorld() const;
 	void sendFightModes() const;
-	void sendNetworkMessage(const NetworkMessage &message) const;
+	void sendNetworkMessage(NetworkMessage &message) const;
 
 	void receivePing();
 
