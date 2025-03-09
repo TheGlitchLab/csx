@@ -1740,8 +1740,8 @@ uint16_t Player::parseRacebyCharm(charmRune_t charmId, bool set, uint16_t newRac
 
 bool Player::isNearDepotBox() {
 	const Position &pos = getPosition();
-	for (int32_t cx = -1; cx <= 1; ++cx) {
-		for (int32_t cy = -1; cy <= 1; ++cy) {
+	for (int32_t cx = -NOTIFY_DEPOT_BOX_RANGE; cx <= NOTIFY_DEPOT_BOX_RANGE; ++cx) {
+		for (int32_t cy = -NOTIFY_DEPOT_BOX_RANGE; cy <= NOTIFY_DEPOT_BOX_RANGE; ++cy) {
 			const auto &posTile = g_game().map.getTile(static_cast<uint16_t>(pos.x + cx), static_cast<uint16_t>(pos.y + cy), pos.z);
 			if (!posTile) {
 				continue;
@@ -3426,65 +3426,70 @@ BlockType_t Player::blockHit(const std::shared_ptr<Creature> &attacker, const Co
 		return blockType;
 	}
 
-	if (damage > 0) {
-		for (int32_t slot = CONST_SLOT_FIRST; slot <= CONST_SLOT_LAST; ++slot) {
-			if (!isItemAbilityEnabled(static_cast<Slots_t>(slot))) {
+	if (damage <= 0) {
+		damage = 0;
+		blockType = BLOCK_ARMOR;
+	}
+
+	int32_t blocked = 0;
+	for (int32_t slot = CONST_SLOT_FIRST; slot <= CONST_SLOT_LAST; ++slot) {
+		if (!isItemAbilityEnabled(static_cast<Slots_t>(slot))) {
+			continue;
+		}
+
+		const auto &item = inventory[slot];
+		if (!item) {
+			continue;
+		}
+
+		for (uint8_t slotid = 0; slotid < item->getImbuementSlot(); slotid++) {
+			ImbuementInfo imbuementInfo;
+			if (!item->getImbuementInfo(slotid, &imbuementInfo)) {
 				continue;
 			}
 
-			const auto &item = inventory[slot];
-			if (!item) {
-				continue;
-			}
+			const int16_t &imbuementAbsorbPercent = imbuementInfo.imbuement->absorbPercent[combatTypeToIndex(combatType)];
 
-			for (uint8_t slotid = 0; slotid < item->getImbuementSlot(); slotid++) {
-				ImbuementInfo imbuementInfo;
-				if (!item->getImbuementInfo(slotid, &imbuementInfo)) {
-					continue;
-				}
-
-				const int16_t &imbuementAbsorbPercent = imbuementInfo.imbuement->absorbPercent[combatTypeToIndex(combatType)];
-
-				if (imbuementAbsorbPercent != 0) {
-					damage -= std::ceil(damage * (imbuementAbsorbPercent / 100.));
-				}
-			}
-
-			// Absorb Percent
-			const ItemType &it = Item::items[item->getID()];
-			if (it.abilities) {
-				int totalAbsorbPercent = 0;
-				const int16_t &absorbPercent = it.abilities->absorbPercent[combatTypeToIndex(combatType)];
-				if (absorbPercent != 0) {
-					totalAbsorbPercent += absorbPercent;
-				}
-
-				if (field) {
-					const int16_t &fieldAbsorbPercent = it.abilities->fieldAbsorbPercent[combatTypeToIndex(combatType)];
-					if (fieldAbsorbPercent != 0) {
-						totalAbsorbPercent += fieldAbsorbPercent;
-					}
-				}
-
-				if (totalAbsorbPercent != 0) {
-					damage -= std::round(damage * (totalAbsorbPercent / 100.0));
-
-					const auto charges = item->getAttribute<uint16_t>(ItemAttribute_t::CHARGES);
-					if (charges != 0) {
-						g_game().transformItem(item, item->getID(), charges - 1);
-					}
-				}
+			if (imbuementAbsorbPercent != 0) {
+				damage -= std::ceil(damage * (imbuementAbsorbPercent / 100.));
 			}
 		}
 
-		// Wheel of destiny - apply resistance
-		wheel()->adjustDamageBasedOnResistanceAndSkill(damage, combatType);
+		// Absorb Percent
+		bool transform = false;
+		const auto charges = item->getAttribute<uint16_t>(ItemAttribute_t::CHARGES);
+		const ItemType &it = Item::items[item->getID()];
+		if (it.abilities) {
+			blocked += static_cast<int32_t>(std::ceil((double)(damage * it.abilities->absorbPercent[combatTypeToIndex(combatType)])) / 100.);
+			if (charges != 0) {
+				transform = true;
+			}
 
-		if (damage <= 0) {
-			damage = 0;
-			blockType = BLOCK_ARMOR;
+			if (field && it.abilities->fieldAbsorbPercent[combatTypeToIndex(combatType)]) {
+				blocked += static_cast<int32_t>(std::ceil((double)(damage * it.abilities->fieldAbsorbPercent[combatTypeToIndex(combatType)])) / 100.);
+				if (charges != 0) {
+					transform = true;
+				}
+			}
+
+			if (transform) {
+				g_game().transformItem(item, item->getID(), charges - 1);
+			}
 		}
 	}
+
+	if (vocation->getAbsorbPercent(combatType)) {
+		blocked += static_cast<int32_t>(std::ceil((double)(damage * vocation->getAbsorbPercent(combatType))) / 100.);
+	}
+
+	damage -= blocked;
+	if (damage <= 0) {
+		damage = 0;
+		blockType = BLOCK_DEFENSE;
+	}
+
+	// Wheel of destiny - apply resistance
+	wheel()->adjustDamageBasedOnResistanceAndSkill(damage, combatType);
 
 	return blockType;
 }
@@ -4033,6 +4038,10 @@ void Player::despawn() {
 	// show player as pending
 	for (const auto &[key, player] : g_game().getPlayers()) {
 		player->vip()->notifyStatusChange(static_self_cast<Player>(), VipStatus_t::PENDING, false);
+	}
+
+	if (g_configManager().getBoolean(LEAVE_PARTY_ON_DEATH) && m_party) {
+		m_party->leaveParty(static_self_cast<Player>());
 	}
 
 	setDead(true);

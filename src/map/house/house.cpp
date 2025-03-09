@@ -248,6 +248,9 @@ void House::setAccessList(uint32_t listId, const std::string &textlist) {
 		const auto &door = getDoorByNumber(listId);
 		if (door) {
 			door->setAccessList(textlist);
+		} else {
+			// The door list is only loaded after the house items are loaded, so we need to save it here for later use
+			m_doorListId[listId] = textlist;
 		}
 
 		// We dont have kick anyone
@@ -421,7 +424,37 @@ bool House::getAccessList(uint32_t listId, std::string &list) const {
 		return false;
 	}
 
+	// Check if we have the list cached and set it to the door list
+	const auto it = m_doorListId.find(listId);
+	if (it != m_doorListId.end()) {
+		list = it->second;
+
+		// Set to the door and remove from cache
+		door->setAccessList(list);
+		m_doorListId.erase(it);
+		return true;
+	}
+
 	return door->getAccessList(list);
+}
+
+bool House::isInAccessList(const std::shared_ptr<Player> &player, uint32_t listId) {
+	if (listId == GUEST_LIST) {
+		return guestList.isInList(player);
+	} else if (listId == SUBOWNER_LIST) {
+		return subOwnerList.isInList(player);
+	}
+
+	const auto &door = getDoorByNumber(listId);
+	if (!door) {
+		return false;
+	}
+
+	return door->accessList->isInList(player);
+}
+
+bool House::isInvited(const std::shared_ptr<Player> &player) const {
+	return getHouseAccessLevel(player) != HOUSE_NOT_INVITED;
 }
 
 void House::addDoor(const std::shared_ptr<Door> &door) {
@@ -695,7 +728,8 @@ bool AccessList::isInList(const std::shared_ptr<Player> &player) const {
 		return true;
 	}
 
-	if (playerList.contains(player->getGUID())) {
+	auto playerIt = playerList.find(player->getGUID());
+	if (playerIt != playerList.end()) {
 		return true;
 	}
 

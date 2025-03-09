@@ -1419,10 +1419,16 @@ int64_t Creature::getStepDuration() {
 		return 0;
 	}
 
+<<<<<<< HEAD
 	// ignore tile friction for god chars
 	const auto &player = getPlayer();
 	if (player && player->isIgnoringFriction()) {
 		return 1;
+=======
+	if (walk.needRecache()) {
+		walk.duration = static_cast<uint16_t>(std::round(walk.calculatedStepSpeed / SERVER_BEAT) * SERVER_BEAT);
+		walk.duration = std::max<uint16_t>(50, walk.duration);
+>>>>>>> c5a4634a949fbcf84a6bb8f41e2e8094bd37d8c6
 	}
 
 	uint32_t calculatedStepSpeed;
@@ -1573,6 +1579,20 @@ void Creature::setParent(std::weak_ptr<Cylinder> cylinder) {
 		const auto &newParent = lockedCylinder->getTile();
 		position = newParent->getPosition();
 		m_tile = newParent;
+<<<<<<< HEAD
+=======
+
+		if (newParent->getGround()) {
+			const auto &it = Item::items[newParent->getGround()->getID()];
+			if (it.speed > 0) {
+				walk.groundSpeed = it.speed;
+			}
+		}
+	}
+
+	if (walk.groundSpeed != oldGroundSpeed) {
+		updateCalculatedStepSpeed();
+>>>>>>> c5a4634a949fbcf84a6bb8f41e2e8094bd37d8c6
 	}
 }
 

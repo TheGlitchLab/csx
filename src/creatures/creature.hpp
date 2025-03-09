@@ -860,5 +860,33 @@ private:
 
 	std::vector<std::function<void()>> asyncTasks;
 
+<<<<<<< HEAD
+=======
+	struct {
+		uint16_t groundSpeed { 0 };
+		uint16_t calculatedStepSpeed { 1 };
+		uint16_t duration { 0 };
+
+		bool needRecache() const {
+			return duration == 0;
+		}
+		void recache() {
+			duration = 0;
+		}
+	} walk;
+
+	void updateCalculatedStepSpeed() {
+		const auto stepSpeed = getStepSpeed();
+		walk.calculatedStepSpeed = 1;
+		const auto tileFriction = walk.groundSpeed;
+		if (stepSpeed > -Creature::speedB) {
+			const auto formula = (1000 * tileFriction) / (Creature::speedA * std::log(stepSpeed + Creature::speedB) - 0.5 + Creature::speedC) - 1.;
+			walk.calculatedStepSpeed = static_cast<uint16_t>(std::max(formula, 1.));
+		}
+
+		walk.recache();
+	}
+
+>>>>>>> c5a4634a949fbcf84a6bb8f41e2e8094bd37d8c6
 	uint8_t m_flagAsyncTask = 0;
 };

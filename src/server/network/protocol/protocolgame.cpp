@@ -216,6 +216,17 @@ namespace {
 			}
 		}
 
+		for (uint16_t i = COMBAT_FIRST; i <= COMBAT_LAST; ++i) {
+			int16_t vocationAbsorbPercent = player->getVocation()->getAbsorbPercent(indexToCombatType(i));
+			if (vocationAbsorbPercent == 0) {
+				continue;
+			}
+
+			g_logger().debug("[cyclopedia damage reduction] element {}, reduced {} percent, for element {}", indexToCombatType(i), vocationAbsorbPercent, combatTypeToName(indexToCombatType(i)));
+
+			damageModifiers[i] -= (100 * vocationAbsorbPercent);
+		}
+
 		for (size_t i = 0; i < COMBAT_COUNT; ++i) {
 			damageModifiers[i] -= 100 * player->getAbsorbPercent(indexToCombatType(i));
 			if (g_configManager().getBoolean(TOGGLE_WHEELSYSTEM)) {
@@ -687,8 +698,9 @@ void ProtocolGame::logout(bool displayEffect, bool forced) {
 	}
 
 	bool removePlayer = !player->isRemoved() && !forced;
+	bool isGameTester = player->hasFlag(PlayerFlags_t::IsGameTester);
 	auto tile = player->getTile();
-	if (removePlayer && !player->isAccessPlayer()) {
+	if (removePlayer && !player->isAccessPlayer() && !isGameTester) {
 		if (tile && tile->hasFlag(TILESTATE_NOLOGOUT)) {
 			player->sendCancelMessage(RETURNVALUE_YOUCANNOTLOGOUTHERE);
 			return;
